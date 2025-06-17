@@ -1,8 +1,0 @@
-README.md
-setup.py
-manifold/manifold.egg-info/PKG-INFO
-manifold/manifold.egg-info/SOURCES.txt
-manifold/manifold.egg-info/dependency_links.txt
-manifold/manifold.egg-info/requires.txt
-manifold/manifold.egg-info/top_level.txt
-tests/test_parser.py
