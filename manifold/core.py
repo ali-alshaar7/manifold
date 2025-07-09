@@ -1,6 +1,7 @@
 import inspect
 from typing import get_type_hints
 import torch
+import ast
 
 def kernel(func):
     """
@@ -38,16 +39,37 @@ def kernel(func):
         return new_args, new_kwargs
 
     def _generate_triton_kernel(type_hints):
-        """Generate a Triton.jit kernel function based on type hints."""
-        # Generate Triton kernel signature
-        kernel_code = f"""
-import triton
-
-@triton.jit
-def triton_kernel({', '.join(f'{param_name}' for param_name, _ in type_hints.items())}):
-    pass
-    """
-
+        """Generate a Triton.jit kernel function based on type hints using AST."""
+        import_node = ast.Import(names=[ast.alias(name='triton')])
+        
+        decorator = ast.Attribute(value=ast.Name(id='triton', ctx=ast.Load()), 
+                                attr='jit', ctx=ast.Load())
+        
+        args = ast.arguments(
+            posonlyargs=[],
+            args=[ast.arg(arg=param_name) for param_name in type_hints.keys()],
+            vararg=None,
+            kwonlyargs=[],
+            kw_defaults=[],
+            kwarg=None,
+            defaults=[]
+        )
+        
+        function_body = [ast.Pass()]
+        
+        function_def = ast.FunctionDef(
+            name='triton_kernel',
+            args=args,
+            body=function_body,
+            decorator_list=[decorator],
+            returns=None
+        )
+        
+        module = ast.Module(body=[import_node, function_def], type_ignores=[])
+        
+        ast.fix_missing_locations(module)
+        kernel_code = ast.unparse(module)
+        
         return kernel_code
 
     def wrapper(*args, **kwargs):
