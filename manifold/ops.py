@@ -12,8 +12,10 @@ class OpType(Enum):
     SUB = "sub"
     MUL = "mul"
     DIV = "div"
+    DOT = "dot"
     POW = "pow"
     NEG = "neg"
+    REDUCE = "reduce"
     ABS = "abs"
     SQRT = "sqrt"
     EXP = "exp"
@@ -32,35 +34,6 @@ class ManifoldOp:
     def __post_init__(self):
         if not isinstance(self.op_type, OpType):
             raise ValueError(f"Invalid op_type: {self.op_type}")
-
-
-class ManifoldInput:
-    """Represents an input tensor in Manifold"""
-    def __init__(self, name: str):
-        self.name = name
-
-    def __repr__(self):
-        return f"ManifoldInput({self.name})"
-
-
-class ManifoldOutput:
-    """Represents an output tensor in Manifold"""
-    def __init__(self, name: str):
-        self.name = name
-        self._source = None
-
-    def set_source(self, source):
-        """Set the source operation that produces this output"""
-        self._source = source
-        return self
-
-    def get_source(self):
-        """Get the source operation"""
-        return self._source
-
-    def __repr__(self):
-        return f"ManifoldOutput({self.name})"
-
 
 def add(a, b):
     """Element-wise addition"""
@@ -113,3 +86,11 @@ def cos(a):
 def tan(a):
     """Element-wise tangent"""
     return ManifoldOp(OpType.TAN, [a])
+
+def dot(a, b):
+    """Dot product"""
+    return ManifoldOp(OpType.DOT, [a, b])
+
+def reduce(a):
+    """vector reduction"""
+    return ManifoldOp(OpType.REDUCE, [a])

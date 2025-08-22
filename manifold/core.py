@@ -1,5 +1,5 @@
 import inspect
-from typing import get_type_hints
+from typing import get_type_hints, Tuple
 import torch
 import ast
 
@@ -10,17 +10,33 @@ def kernel(func):
     Manifold kernel decorator that converts Python functions into Triton kernels.
     """
     def wrapper(*args, **kwargs):
-        # Get type hints for function parameters
         type_hints = get_type_hints(func)
-        
-        # Generate Triton kernel
-        triton_kernel = _generate_triton_kernel(type_hints)
+
+        manifold_args = _convert_tensor_to_manifold_symbolic_tensor(args, type_hints)
+        for result in func(*manifold_args, **kwargs):
+            triton_kernel = _generate_triton_kernel(type_hints, func.__name__)
         
         return triton_kernel
     
     return wrapper
 
-def _generate_triton_kernel(type_hints):
+def _convert_tensor_to_manifold_symbolic_tensor(args, type_hints):
+    new_args = []
+    for arg, param_name, arg_type in zip(args, type_hints.keys(), type_hints.values()):
+        if isinstance(arg, torch.Tensor):
+            if arg_type == out:
+                new_arg = out(name=param_name, shape=arg.shape)
+            elif arg_type == inp:
+                new_arg = inp(name=param_name, shape=arg.shape)
+            else:
+                raise NotImplementedError
+            new_args.append(new_arg)
+        else:
+            new_args.append(arg)
+    
+    return new_args
+
+def _generate_triton_kernel(type_hints, func_name):
     """Generate a Triton.jit kernel function based on Manifold operations."""
     import ast
     
@@ -47,7 +63,7 @@ def _generate_triton_kernel(type_hints):
     
     # Create the function definition
     function_def = ast.FunctionDef(
-        name='triton_kernel',
+        name=func_name,
         args=args,
         body=function_body,
         decorator_list=[decorator],
@@ -63,133 +79,25 @@ def _generate_triton_kernel(type_hints):
     
     return kernel_code
 
-def _generate_triton_op(op: ManifoldOp, var_name: str) -> ast.AST:
-    """Generate Triton AST node for a Manifold operation."""
-    if op.op_type == OpType.ADD:
-        return ast.BinOp(
-            left=_generate_triton_op(op.operands[0], var_name),
-            op=ast.Add(),
-            right=_generate_triton_op(op.operands[1], var_name)
-        )
-    elif op.op_type == OpType.SUB:
-        return ast.BinOp(
-            left=_generate_triton_op(op.operands[0], var_name),
-            op=ast.Sub(),
-            right=_generate_triton_op(op.operands[1], var_name)
-        )
-    elif op.op_type == OpType.MUL:
-        return ast.BinOp(
-            left=_generate_triton_op(op.operands[0], var_name),
-            op=ast.Mult(),
-            right=_generate_triton_op(op.operands[1], var_name)
-        )
-    elif op.op_type == OpType.DIV:
-        return ast.BinOp(
-            left=_generate_triton_op(op.operands[0], var_name),
-            op=ast.Div(),
-            right=_generate_triton_op(op.operands[1], var_name)
-        )
-    elif op.op_type == OpType.POW:
-        return ast.BinOp(
-            left=_generate_triton_op(op.operands[0], var_name),
-            op=ast.Pow(),
-            right=_generate_triton_op(op.operands[1], var_name)
-        )
-    elif op.op_type == OpType.NEG:
-        return ast.UnaryOp(
-            op=ast.USub(),
-            operand=_generate_triton_op(op.operands[0], var_name)
-        )
-    elif op.op_type == OpType.ABS:
-        return ast.Call(
-            func=ast.Attribute(value=ast.Name(id='triton', ctx=ast.Load()),
-                             attr='abs', ctx=ast.Load()),
-            args=[_generate_triton_op(op.operands[0], var_name)],
-            keywords=[]
-        )
-    elif op.op_type == OpType.SQRT:
-        return ast.Call(
-            func=ast.Attribute(value=ast.Name(id='triton', ctx=ast.Load()),
-                             attr='sqrt', ctx=ast.Load()),
-            args=[_generate_triton_op(op.operands[0], var_name)],
-            keywords=[]
-        )
-    elif op.op_type == OpType.EXP:
-        return ast.Call(
-            func=ast.Attribute(value=ast.Name(id='triton', ctx=ast.Load()),
-                             attr='exp', ctx=ast.Load()),
-            args=[_generate_triton_op(op.operands[0], var_name)],
-            keywords=[]
-        )
-    elif op.op_type == OpType.LOG:
-        return ast.Call(
-            func=ast.Attribute(value=ast.Name(id='triton', ctx=ast.Load()),
-                             attr='log', ctx=ast.Load()),
-            args=[_generate_triton_op(op.operands[0], var_name)],
-            keywords=[]
-        )
-    elif op.op_type == OpType.SIN:
-        return ast.Call(
-            func=ast.Attribute(value=ast.Name(id='triton', ctx=ast.Load()),
-                             attr='sin', ctx=ast.Load()),
-            args=[_generate_triton_op(op.operands[0], var_name)],
-            keywords=[]
-        )
-    elif op.op_type == OpType.COS:
-        return ast.Call(
-            func=ast.Attribute(value=ast.Name(id='triton', ctx=ast.Load()),
-                             attr='cos', ctx=ast.Load()),
-            args=[_generate_triton_op(op.operands[0], var_name)],
-            keywords=[]
-        )
-    elif op.op_type == OpType.TAN:
-        return ast.Call(
-            func=ast.Attribute(value=ast.Name(id='triton', ctx=ast.Load()),
-                             attr='tan', ctx=ast.Load()),
-            args=[_generate_triton_op(op.operands[0], var_name)],
-            keywords=[]
-        )
-    elif isinstance(op, str):  # Handle input variable names
-        return ast.Name(id=op, ctx=ast.Load())
-    else:
-        raise ValueError(f"Unsupported operation type: {op.op_type}")
-
-def _traverse_operations(output: str) -> list[ast.AST]:
-    """Traverse from output to inputs to generate Triton operations."""
-    operations = []
-    
-    def traverse(op):
-        if isinstance(op, str):
-            # Base case: we've reached an input
-            return
-        elif isinstance(op, ManifoldOp):
-            # Recursively traverse operands
-            for operand in op.operands:
-                traverse(operand)
-            
-            # Generate Triton operation
-            operations.append(_generate_triton_op(op, op.operands[0]))
-    
-    traverse(output)
-    return operations
-
 class inp:
-    def __init__(self, name: str):
+    def __init__(self, name: str, shape: Tuple[int]):
         self.name = name
-        self.spec = None
+        self.slice = None
+        self.shape = shape
     
-    def set_slice(self, spec: str):
-        self.spec = spec
+    def set_slice(self, slice: str):
+        self.slice = slice
         return self
 
 class out:
-    def __init__(self, name: str):
+    def __init__(self, name: str, shape: Tuple[int]):
         self.name = name
-        self.spec = None
+        self.shape = shape
+        self.slice = None
         self.source = None
     
-    def set_slice(self, spec: str):
-        self.spec = spec
+    def set_slice(self, slice: str):
+        self.slice = slice
         return self
 
     def store(self, source: ManifoldOp | inp):
