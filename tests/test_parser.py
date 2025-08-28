@@ -16,5 +16,5 @@ def test_parse_simple_kernel():
     B = torch.randn(3, 4)
     C = torch.zeros(2, 4)
     kernel = matmul_kernel(A, B, C)
-    print(kernel)
+
     assert "def matmul_kernel(A, B, C):" in kernel
